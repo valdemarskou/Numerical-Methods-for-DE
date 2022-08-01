@@ -1,16 +1,16 @@
 
+using DifferentialEquations
 
-
-function DiscreteFourierTransform(fvalues::Array{Float64,1},s::Int)
+function DiscreteFourierTransform(fvalues::Array{ComplexF64,1},s::Int)
     N = length(fvalues)
-    FTransform = Array{ComplexF64,1}()
+    DFT = Array{ComplexF64,1}()
     for k=1:N 
-        push!(FTransform,0)
+        push!(DFT,0)
         for j=1:N 
-            FTransform[k] = FTransform[k] + fvalues[j] * exp(-2*s*pi*im*j*k/N)
+            DFT[k] = DFT[k] + fvalues[j] * exp(-2*s*pi*im*(j-1)*(k-1)/N)
         end
     end
-    return FTransform
+    return DFT
 
 end
 
@@ -19,7 +19,7 @@ function InitializeFFT(N::Int,s::Int)
     w_first = exp(-2*s*pi*im/N)
     w = Array{ComplexF64,1}()
     for j=1:N 
-        push!(w,(w_first)^j)
+        push!(w,(w_first)^(j-1))
     end
 
     return w
@@ -27,7 +27,7 @@ end
 
 # Anvend kun med værdier N=2^k hvor k er ulige.
 
-function Radix2FFT(fvalues::Array{Float64,1},wvalues::Array{ComplexF64,1})
+function Radix2FFT(fvalues::Array{ComplexF64,1},wvalues::Array{ComplexF64,1})
     # noPtsAtLevel,a,b,c,d,p,N,Ndiv2,m = repeat([Int],9)
     N = length(fvalues)
     Ndiv2 = Int(N/2)
@@ -35,13 +35,13 @@ function Radix2FFT(fvalues::Array{Float64,1},wvalues::Array{ComplexF64,1})
 
     for l=1:Int((m+1)/2)
         noPtsAtLevel = Int(2^(l-1))
-        a = 1
+        a = 0
         b = Int(Ndiv2/noPtsAtLevel)
-        return noPtsAtLevel
+        # return noPtsAtLevel
         p = 1
-        for k=0:(b-1) 
+        for k=1:b 
             W = wvalues[p]
-            for i=k:div(N, noPtsAtLevel):N
+            for i=k:Int(N/noPtsAtLevel):(N-1)
                 z = W * (fvalues[a+i]-fvalues[b+i])
                 fvalues[a+i] = fvalues[a+i] + fvalues[b+i]
                 fvalues[b+i] = z
@@ -49,17 +49,18 @@ function Radix2FFT(fvalues::Array{Float64,1},wvalues::Array{ComplexF64,1})
             p = p + noPtsAtLevel
         end
     end
-    #=
-    for l=(div(m+3,2)):m 
-        noPtsAtLevel = 2^(l-1)
-        b = div(Ndiv2,noPtsAtLevel)
+    
+    for l=Int((m+3)/2):m 
+        noPtsAtLevel = Int(2^(l-1))
+        b = Int(Ndiv2/noPtsAtLevel)
         c = noPtsAtLevel
         d = b + noPtsAtLevel
         p = 1
+        a = 0
 
-        for k=1:(b-1) 
+        for k=1:b 
             W = wvalues[p]
-            for j=k:(N/noPtsAtLevel):(noPtsAtLevel - 1)
+            for j=k:Int(N/noPtsAtLevel):(noPtsAtLevel - 1)
                 for i=j:(2*noPtsAtLevel):N 
                     z=W*(fvalues[a+i]-fvalues[b+i])
                     fvalues[a+i] = fvalues[a+i] + fvalues[b+i]
@@ -71,7 +72,7 @@ function Radix2FFT(fvalues::Array{Float64,1},wvalues::Array{ComplexF64,1})
             p = p+noPtsAtLevel
         end
     end
-    =#
+    
     return fvalues
     
 end
@@ -79,11 +80,32 @@ end
 
 
 
-test = [2.0,3,2,3,4,2,1,5]
-# testOutput = DiscreteFourierTransform(V,1)
-
- wvalues = InitializeFFT(2^3,1)
-
-Radix2FFT(test,wvalues)
+test = Array{ComplexF64,1}([2.0,3.0,2,3.0,4,2,1,5])
 
 
+
+# testOutput = DiscreteFourierTransform(test,1)
+
+wvalues = InitializeFFT(2^8,1)
+
+# testOutput2 = Radix2FFT(test,wvalues)
+
+
+
+
+# Burde være nul.....
+#testOutput[7]
+
+
+testInput = Array{ComplexF64,1}(sin.(1:2^9)+cos.(1:2^9))
+
+
+testOutput = Radix2FFT(testInput,wvalues)
+
+
+testOutput[2]
+
+
+# using Plots
+
+#scatter(Real(testOutput))
