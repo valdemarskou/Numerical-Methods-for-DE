@@ -1,5 +1,6 @@
 
 using DifferentialEquations
+using FFTW
 
 function DiscreteFourierTransform(fvalues::Array{ComplexF64,1},s::Int)
     N = length(fvalues)
@@ -16,16 +17,20 @@ end
 
 
 function InitializeFFT(N::Int,s::Int)
-    w_first = exp(-2*s*pi*im/N)
-    w = Array{ComplexF64,1}()
+    # w_first = exp(-2*s*pi*im/N)
+    w = Array{ComplexF64,1}(zeros(N))
     for j=1:N 
-        push!(w,(w_first)^(j-1))
+        #push!(w,exp(-2*s*pi*j*im/N))
+        w[j] = exp(-2*s*pi*j*im/N)
     end
 
     return w
 end
 
-# Anvend kun med værdier N=2^k hvor k er ulige.
+# Can only be applied to lengths N=2^k where k is odd. This seems to be correct 
+# in terms of what is written in the textbook, however the values disagree with 
+# the naive implementation of the DFT, as well as with the methods from the FFTW 
+# package. Unsure what to do about this issue.
 
 function Radix2FFT(fvalues::Array{ComplexF64,1},wvalues::Array{ComplexF64,1})
     # noPtsAtLevel,a,b,c,d,p,N,Ndiv2,m = repeat([Int],9)
@@ -37,14 +42,16 @@ function Radix2FFT(fvalues::Array{ComplexF64,1},wvalues::Array{ComplexF64,1})
         noPtsAtLevel = Int(2^(l-1))
         a = 0
         b = Int(Ndiv2/noPtsAtLevel)
-        # return noPtsAtLevel
-        p = 1
-        for k=1:b 
-            W = wvalues[p]
+        # return b
+        p = 0
+        for k=0:(b-1) 
+            W = wvalues[p+1]
+            # return W
             for i=k:Int(N/noPtsAtLevel):(N-1)
-                z = W * (fvalues[a+i]-fvalues[b+i])
-                fvalues[a+i] = fvalues[a+i] + fvalues[b+i]
-                fvalues[b+i] = z
+                z = W * (fvalues[a+i+1]-fvalues[b+i+1])
+                # return (fvalues[a+i+1]-fvalues[b+i+1])
+                fvalues[a+i+1] = fvalues[a+i+1] + fvalues[b+i+1]
+                fvalues[b+i+1] = z 
             end
             p = p + noPtsAtLevel
         end
@@ -52,21 +59,21 @@ function Radix2FFT(fvalues::Array{ComplexF64,1},wvalues::Array{ComplexF64,1})
     
     for l=Int((m+3)/2):m 
         noPtsAtLevel = Int(2^(l-1))
+        a = 0
         b = Int(Ndiv2/noPtsAtLevel)
         c = noPtsAtLevel
         d = b + noPtsAtLevel
-        p = 1
-        a = 0
+        p = 0
 
-        for k=1:b 
-            W = wvalues[p]
+        for k=0:(b-1) 
+            W = wvalues[p+1]
             for j=k:Int(N/noPtsAtLevel):(noPtsAtLevel - 1)
-                for i=j:(2*noPtsAtLevel):N 
-                    z=W*(fvalues[a+i]-fvalues[b+i])
-                    fvalues[a+i] = fvalues[a+i] + fvalues[b+i]
-                    fvalues[b+i] = fvalues[c+i] + fvalues[d+i]
-                    fvalues[d+i] = W*(fvalues[c+i]-fvalues[d+i])
-                    fvalues[c+i] = z
+                for i=j:(2*noPtsAtLevel):(N-1) 
+                    z = W*(fvalues[a+i+1]-fvalues[b+i+1])
+                    fvalues[a+i+1] = fvalues[a+i+1] + fvalues[b+i+1]
+                    fvalues[b+i+1] = fvalues[c+i+1] + fvalues[d+i+1]
+                    fvalues[d+i+1] = W*(fvalues[c+i+1]-fvalues[d+i+1])
+                    fvalues[c+i+1] = z
                 end 
             end
             p = p+noPtsAtLevel
@@ -78,34 +85,21 @@ function Radix2FFT(fvalues::Array{ComplexF64,1},wvalues::Array{ComplexF64,1})
 end
 
 
+#=
+# Example. Delete if necessary.
+testInput = Array{ComplexF64,1}(sin.(1:2^9)+cos.(1:2^9)+(1:2^9)/(2^9))
+DFTOutput = DiscreteFourierTransform(testInput,1)
+
+wvalues = InitializeFFT(2^9,1)
+FFTOutput = Radix2FFT(testInput,wvalues)
+
+# FFTWOutput = fft(testInput)
+
+using Plots
+scatter(DFTOutput)
+scatter(FFTOutput)
 
 
-test = Array{ComplexF64,1}([2.0,3.0,2,3.0,4,2,1,5])
 
-
-
-# testOutput = DiscreteFourierTransform(test,1)
-
-wvalues = InitializeFFT(2^8,1)
-
-# testOutput2 = Radix2FFT(test,wvalues)
-
-
-
-
-# Burde være nul.....
-#testOutput[7]
-
-
-testInput = Array{ComplexF64,1}(sin.(1:2^9)+cos.(1:2^9))
-
-
-testOutput = Radix2FFT(testInput,wvalues)
-
-
-testOutput[2]
-
-
-# using Plots
-
-#scatter(Real(testOutput))
+# scatter(FFTWOutput)
+=#
