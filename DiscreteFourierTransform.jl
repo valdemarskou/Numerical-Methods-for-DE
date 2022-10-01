@@ -4,11 +4,10 @@ using FFTW
 
 function DiscreteFourierTransform(fvalues::Array{ComplexF64,1},s::Int)
     N = length(fvalues)
-    DFT = Array{ComplexF64,1}()
-    for k=1:N 
-        push!(DFT,0)
-        for j=1:N 
-            DFT[k] = DFT[k] + fvalues[j] * exp(-2*s*pi*im*(j-1)*(k-1)/N)
+    DFT = Array{ComplexF64,1}(zeros(N))
+    for k in 0:(N-1)
+        for j in 0:(N-1) 
+            DFT[k+1] = DFT[k+1] + fvalues[j+1] * exp(-2*s*pi*im*j*k/N)
         end
     end
     return DFT
@@ -52,12 +51,13 @@ function Radix2FFT(fvalues::Array{ComplexF64,1},wvalues::Array{ComplexF64,1})
                 # return (fvalues[a+i+1]-fvalues[b+i+1])
                 fvalues[a+i+1] = fvalues[a+i+1] + fvalues[b+i+1]
                 fvalues[b+i+1] = z 
+                return fvalues[1]
             end
             p = p + noPtsAtLevel
         end
     end
     
-    for l=Int((m+3)/2):m 
+    for l=Int((m+3)/2):m
         noPtsAtLevel = Int(2^(l-1))
         a = 0
         b = Int(Ndiv2/noPtsAtLevel)
@@ -96,10 +96,9 @@ FFTOutput = Radix2FFT(testInput,wvalues)
 # FFTWOutput = fft(testInput)
 
 using Plots
-scatter(DFTOutput)
-scatter(FFTOutput)
-
-
-
+scatter(DFTOutput,xlims=(-100,100),ylims=(-300,300))
+# scatter(FFTOutput,xlims=(-100,100),ylims=(-300,300))
 # scatter(FFTWOutput)
+
 =#
+
