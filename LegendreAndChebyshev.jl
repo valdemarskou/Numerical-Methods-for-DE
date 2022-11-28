@@ -102,10 +102,26 @@ function JacobiPolynomial(a::Float64, b::Float64, k::Int, x)
     return Pkmin0
 end
 
+function _OrthonormalJacobiPolynomial00(a::Float64, b::Float64,k::Int,x)
+    return JacobiPolynomial(a,b,k,x) * sqrt((2*k+1)/2)
+end
+
+function _OrthonormalJacobiPolynomial11(a::Float64, b::Float64,k::Int,x)
+    return JacobiPolynomial(a,b,k,x) * sqrt((k+2)*(2*k+3)/(2*2*2*(k+1)))
+end
+
 function OrthonormalJacobiPolynomial(a::Float64, b::Float64, k::Int, x)
-    y = 2^(a+b+1) * (gamma(k+a+1)*gamma(k+b+1))/(gamma(k+1)*gamma(k+a+b+1)*(2*k+a+b+1))
-    
-    return JacobiPolynomial(a,b,k,x)/(sqrt(y))
+    if a == b == 0.0
+        return _OrthonormalJacobiPolynomial00(a,b,k,x)
+
+    elseif a == b == 1.0
+        return _OrthonormalJacobiPolynomial11(a,b,k,x)
+
+    else
+        y = 2^(a+b+1) * (gamma(k+a+1)*gamma(k+b+1))/(gamma(k+1)*gamma(k+a+b+1)*(2*k+a+b+1))
+        return JacobiPolynomial(a,b,k,x)/(sqrt(y))
+    end
+
 end
 
 
@@ -388,12 +404,13 @@ function DiscreteLegendreCoefficients(M::Int,xvalues::Array{Float64,1},wvalues::
 
     for k in 0:(M-1)
         numerator = 0
-        #denominator = 0
+        
         for j in 0:N
             numerator = numerator + fvalues[j+1]*LegendrePolynomial(k,xvalues[j+1])*wvalues[j+1]
-            #denominator = denominator + wvalues[j+1]*LegendrePolynomial(k,xvalues[j+1])^2
+            #numerator = numerator + fvalues[j+1]*OrthonormalJacobiPolynomial(0.0,0.0,k,xvalues[j+1])*wvalues[j+1]
         end
         fcoeffs[k+1] = numerator * (2*k+1)/2
+        #fcoeffs[k+1] = numerator
     end
     
     return fcoeffs
@@ -529,6 +546,10 @@ function VandermondeDerivativeMatrix(a::Float64,b::Float64,xvalues::Array{Float6
         end
     end
     return V
+end
+
+function DerivativeMatrix(a::Float64,b::Float64,xvalues::Array{Float64,1})
+    return VandermondeDerivativeMatrix(a::Float64,b::Float64,xvalues::Array{Float64,1}) * inv(VandermondeMatrix(a::Float64,b::Float64,xvalues::Array{Float64,1}))
 end
 
 

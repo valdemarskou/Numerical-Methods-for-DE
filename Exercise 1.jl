@@ -13,7 +13,24 @@ function u(x)
 end
 =#
 
-
+# Problem a) Plot of the continuous truncation error.
+let 
+    N = 13
+    τ = 2/(3*sqrt(3))
+    ErrorVec = Array{Float64,1}(zeros(N))
+    τ = τ - 1/3
+    for j in 1:N
+         τ = τ - 2/3 *((2-sqrt(3)))^(2*j)
+        ErrorVec[j] = τ
+    end
+    ErrorVec
+    plot2 = scatter(ErrorVec,yaxis = :log,
+    xticks =[1,2,3,4,5,6,7,8,9,10,11,12,13,14],
+    marker = :diamond,
+    color = :blue,
+    xlabel = "n",label = "τ",title = "Truncation error" )
+    #savefig(plot2, "plog2.png")
+end
 
 
 # problem b) plot 1
@@ -38,15 +55,38 @@ let
         FourierInterpolantFromNodes(x,ComputeNodes(64),ComputeValues(64,v))
     end
     xs = range(0,2*pi,length=100)
-    output = plot(xs,v.(xs),ylims=(0.3,1),color = :black,label = "")
+    p1 = plot(xs,v.(xs),ylims=(0.3,1),color = :black,label = "")
     plot!(xs,interpolant4.(xs),linestyle = :dash,color = :blue,label ="N = 4")
     plot!(xs,interpolant8.(xs),linestyle = :dash, color = :green, label = "N = 8")
     plot!(xs,interpolant16.(xs),linestyle = :dash, color = :cyan, label = "N = 16")
     plot!(xs,interpolant32.(xs),linestyle = :dash, color = :purple, label = "N = 32")
     plot!(xs,interpolant64.(xs),linestyle = :dash, color = :red, label = "N = 64")
-    display(output)
+    #display(output)
 
-    #savefig(output,"plot3.png")
+    function interpolant4error(x)
+        return abs(v(x)-FourierInterpolantFromNodes(x,ComputeNodes(4),ComputeValues(4,v)))+0.000000000000001
+    end
+    function interpolant8error(x)
+        return abs(v(x)-FourierInterpolantFromNodes(x,ComputeNodes(8),ComputeValues(8,v)))+0.000000000000001
+    end
+    function interpolant16error(x)
+        abs(v(x)-FourierInterpolantFromNodes(x,ComputeNodes(16),ComputeValues(16,v)))+0.000000000000001
+    end
+    function interpolant32error(x)
+        abs(v(x)-FourierInterpolantFromNodes(x,ComputeNodes(32),ComputeValues(32,v)))+0.000000000000001
+    end
+    function interpolant64error(x)
+        abs(v(x)-FourierInterpolantFromNodes(x,ComputeNodes(64),ComputeValues(64,v)))+0.000000000000001
+    end
+    xs = range(0,2*pi,length=100)
+    p2 = plot(xs,interpolant4error.(xs),linestyle = :dash,color = :blue,label ="N = 4",yaxis = :log)
+    plot!(xs,interpolant8error.(xs),linestyle = :dash,color = :green,label ="N = 8")
+    plot!(xs,interpolant16error.(xs),linestyle = :dash,color = :cyan, label = "N = 16")
+    plot!(xs,interpolant32error.(xs),linestyle = :dash,color = :purple, label = "N = 32")
+    plot!(xs,interpolant64error.(xs),linestyle = :dash,color = :red, label = "N = 64")
+
+    output = plot(p1,p2,layout =(2,1))
+    #savefig(output,"FourierInterpolantPlotAndErrors.png")
 end
 
 
@@ -142,24 +182,7 @@ plot1 = scatter(û,xlabel = "n",label = "aₙ",title = "Continuous Fourier Coef
         color = :red)
         
 =#
-#problem b) plot of the continuous truncation error.
-let 
-    N = 13
-    τ = 2/(3*sqrt(3))
-    ErrorVec = Array{Float64,1}(zeros(N))
-    τ = τ - 1/3
-    for j in 1:N
-         τ = τ - 2/3 *((2-sqrt(3)))^(2*j)
-        ErrorVec[j] = τ
-    end
-    ErrorVec
-    plot2 = scatter(ErrorVec,yaxis = :log,
-    xticks =[1,2,3,4,5,6,7,8,9,10,11,12,13,14],
-    marker = :diamond,
-    color = :blue,
-    xlabel = "n",label = "τ",title = "Truncation error" )
-    #savefig(plot2, "plog2.png")
-end
+
 
 
 
@@ -496,7 +519,7 @@ let
     V40 = VandermondeMatrix(0.0,0.0,x40)
     Vx40 = VandermondeDerivativeMatrix(0.0,0.0,x40)
     D40 = Vx40 * inv(V40)
-    vapprox40 = D40 * v.(x40)
+    return vapprox40 = D40 * v.(x40)
     
     x80,w80 = gausslobatto(80)
     V80 = VandermondeMatrix(0.0,0.0,x80)
@@ -572,6 +595,9 @@ let
     V40*transpose(V40)
     
 end 
+
+
+
 
 
 

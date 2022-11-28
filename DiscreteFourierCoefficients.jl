@@ -20,13 +20,19 @@ function ComputeNodes(N::Int)
     return xvalues
 end
 
-function ComputeValues(N::Int, f::Function)
-    fvalues = Array{Float64,1}(fill(0,N))
-    for j=0:(N-1) 
-        fvalues[j+1] = f(2*pi*j/N)
-    end
 
-    return fvalues
+function ComputeNodes(N::Int,a,b)
+    xvalues = Array{Float64,1}(zeros(N))
+    for j in 0:(N-1)
+        xvalues[j+1] = a + (b-a)*j/N 
+    end
+    return xvalues
+end
+
+
+
+function ComputeValues(N::Int, f::Function,a,b)
+    return f.(ComputeNodes(N,a,b))
 end
 
 # Algorithm for directly evaluating the discrete fourier coefficients of f,
@@ -50,21 +56,38 @@ end
 # Algorithm for computing the fourier interpolant as a function
 # of x, given the modes of f (computed through earlier algorithms)
 
-function FourierInterpolantFromModes(x,fmodes::Array{ComplexF64,1})
+function FourierInterpolantFromModes(x::Float64,fmodes::Array{ComplexF64,1})
+
     N = length(fmodes)-1
     # N will be even.
+    if(iseven(N) == false)
+        return _FourierInterpolantFromModes(x,fmodes)
+    end
     Ndiv2 = Int(N/2)
-    function f(x)
-        return (fmodes[1]*exp(-im*x*Ndiv2) + fmodes[N+1]*exp(im*x*Ndiv2))/2
-    end
-    #=
+    s = (fmodes[1]*exp(-im*x*Ndiv2) + fmodes[N+1]*exp(im*x*Ndiv2))/2
+    
+    
     for k in (1-Ndiv2):(Ndiv2-1) 
-        f = f + fmodes[k + 1 + Ndiv2] * exp(im*k*x)
+        s = s + fmodes[k + 1 + Ndiv2] * exp(im*k*x)
     end
-    =#
-    g = Real(f)
-    return g
+    
+    return real(s)
 end
+
+function _FourierInterpolantFromModes(x::Float64,fmodes::Array{ComplexF64,1})
+    N = length(fmodes)
+    Ndiv2 = Int(N/2)
+    s = fmodes[1]*exp(-im*x*Ndiv2)/2
+    for k in (1-Ndiv2):(Ndiv2-1)
+        s = s + fmodes[k+1+Ndiv2]*exp(im*k*x)
+    end
+
+    return real(s)
+end
+
+
+
+
 
 # Algorithm for computing the fourier interpolant as a function
 # of x, given the nodes of f (computed through earlier algorithms)

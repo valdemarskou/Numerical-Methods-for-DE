@@ -122,6 +122,30 @@ end
 #
 # Algorithm 17
 
+function FourierDerivativeByFFT(f::Array{ComplexF64,1},m::Int)
+   
+    N = length(f) 
+    F = fft(f)
+
+    # Requires N to be even.
+
+    for k in 0:(Int(N/2) - 1)
+        F[k+1] = (im*k)^(m) * F[k+1]
+    end
+
+    if iseven(m) == false
+        F[Int(N/2) + 1] = 0
+    end
+
+    for k in (Int(N/2) + 1):(N-1)
+        F[k+1] = (im*(k-N))^m * F[k+1]
+    end
+
+    Df = bfft(F)/N
+
+    
+end
+
 function FourierDerivativeByFFT(f::Array{Float64,1},m::Int)
    
     N = length(f) 
