@@ -40,30 +40,40 @@ end
 # Assumes square. Fixed switchup of indices.
 function AuxMatrices(M::Int)
 
-    Mdiv2 = Int(M/2)
-    AuxMat1 = AbstractArray{ComplexF64,2}(fill(0,M,M))
-    AuxMat2 = AbstractArray{ComplexF64,2}(fill(0,M,M))
-    AuxMat3 = AbstractArray{Float64,2}(fill(0,M,M))
-    AuxMat4 = AbstractArray{Float64,2}(fill(0,M,M))
+    ones = AbstractArray{Float64,2}(fill(1,M,M))
 
-    for j in (-Mdiv2):(Mdiv2-1)
-        for k in (-Mdiv2):(Mdiv2-1)
-            AuxMat1[j+Mdiv2+1,k+Mdiv2+1] = im*k
-            AuxMat2[j+Mdiv2+1,k+Mdiv2+1] = im*j
-
-            AuxMat3[j+Mdiv2+1,k+Mdiv2+1] = -(j*j+k*k)
-            AuxMat4[j+Mdiv2+1,k+Mdiv2+1] = 1/(j*j+k*k)
-        end
-    end
+    AuxMat1 = im*ones.*fftfreq(M,M)
+    AuxMat2 = AbstractArray{ComplexF64,2}(transpose(AuxMat1))
+    AuxMat3 = -ones.*fftfreq(M,M).*(ones.*fftfreq(M,M)) - (transpose(fftfreq(M,M).*ones)).*(transpose(fftfreq(M,M).*ones))
+    AuxMat4 = map((x)->-1/x,AuxMat3)
 
     # To avoid division by zero.
-    AuxMat4[Mdiv2+1,Mdiv2+1] = 0
+    AuxMat4[1,1] = 0.0
+
 
     return AuxMat1,AuxMat2,AuxMat3,AuxMat4
 end
 
+
 # Also assumes square.
+function ZeroPad(w::AbstractArray{Float64,2})
+
+    w=fftshift(w)
+    N,N = size(w)
+    M = Int(3/2 * N)
+    
+    wPadded = Array{Float64,2}(fill(0,M,M))
+    for m in 1:N
+        for n in 1:N
+            wPadded[m,n] = w[m,n]
+        end
+    end
+
+    return fftshift(wPadded)
+end
 function ZeroPad(w::AbstractArray{ComplexF64,2})
+
+    w=fftshift(w)
     N,N = size(w)
     M = Int(3/2 * N)
     
@@ -74,45 +84,85 @@ function ZeroPad(w::AbstractArray{ComplexF64,2})
         end
     end
 
-    return wPadded
+    return fftshift(wPadded)
+end
+
+function RemovePad(w::AbstractArray{Float64,2})
+
+    w = fftshift(w)
+    M,M = size(w)
+    N = Int(2/3 * M)
+
+    wRemoved = Array{Float64,2}(fill(0,N,N))
+    for m in 1:N
+        for n in 1:N
+            wRemoved[m,n] = w[m,n]
+        end 
+    end
+
+    return fftshift(wRemoved)
+end
+function RemovePad(w::AbstractArray{ComplexF64,2})
+
+    w = fftshift(w)
+    M,M = size(w)
+    N = Int(2/3 * M)
+
+    wRemoved = Array{ComplexF64,2}(fill(0,N,N))
+    for m in 1:N
+        for n in 1:N
+            wRemoved[m,n] = w[m,n]
+        end 
+    end
+
+    return fftshift(wRemoved)
 end
 
 
-#Assumes that the auxiliary matrices are of length M = 3N/2. Also removes padding.
+
+
+# Removes padding. AuxMat1, AuxMat2, AuxMat4 are assumed to be zero-padded.
 function TurbulenceEquationTimeDerivative(w::AbstractArray{ComplexF64,2},AuxMat1::AbstractArray{ComplexF64,2},AuxMat2::AbstractArray{ComplexF64,2},AuxMat3::AbstractArray{Float64,2},AuxMat4::AbstractArray{Float64,2},N::Int)
 
+    wTimeDerivative = AuxMat3.*w
     w = ZeroPad(w)
-    w = 4/(9*N*N)*fftshift(fft(ifft((w.*AuxMat4).*AuxMat1).*ifft(w.*AuxMat2) - ifft(w.*AuxMat1).*ifft((w.*AuxMat4).*AuxMat2))) + AuxMat3.*w
-    # Removes zero-padding.
-    wTimeDerivative = AbstractArray{ComplexF64,2}(fill(0,N,N))
-    for m in 1:N
-        for n in 1:N
-            wTimeDerivative[m,n] = w[m,n]
-        end
-    end
+    w = 4/(9*N*N)* fft(((w.*AuxMat4).*AuxMat2).*ifft(w.*AuxMat1) - ifft(w.*AuxMat2).*ifft((w.*AuxMat4).*AuxMat1))
+    
+    # Removes zero-padding, adds convolution terms.
+    wTimeDerivative += RemovePad(w)
 
     return wTimeDerivative   
 end
 
 
-# Uses Tsit5(). We fix M = 3N/2.
-function TurbulenceEquationDriver(wInitial::AbstractArray{ComplexF64,2},N::Int)
+#  Stuck on evaluating...
+function TurbulenceEquationDriver(wInitial::AbstractArray{ComplexF64,2})
 
-    AuxMat1,AuxMat2,AuxMat3,AuxMat4 = AuxMatrices(Int(3*N/2))
+    N,N = size(wInitial)
 
-    g(w,p,t) = TurbulenceEquationTimeDerivative(w,AuxMat1,AuxMat2,AuxMat3,AuxMat4,N)
-    tspan = (0.0,1.0)
+    AuxMat1,AuxMat2,AuxMat3,AuxMat4 = AuxMatrices(N)
+    AuxMat1 = ZeroPad(AuxMat1)
+    AuxMat2 = ZeroPad(AuxMat2)
+    AuxMat4 = ZeroPad(AuxMat4)
+
+    g(u,p,t) = TurbulenceEquationTimeDerivative(u,AuxMat1,AuxMat2,AuxMat3,AuxMat4,N)
+    tspan = (0.0,0.1)
     prob = ODEProblem(g,wInitial,tspan)
-    sol = solve(prob,Tsit5())
+    sol = solve(prob)
 
     return sol
 end
 
+function TurbulenceEquationTimeDerivativeNoPad(w::AbstractArray{ComplexF64,2},AuxMat1::AbstractArray{ComplexF64,2},AuxMat2::AbstractArray{ComplexF64,2},AuxMat3::AbstractArray{Float64,2},AuxMat4::AbstractArray{Float64,2})
+    wTimeDeriv = AuxMat3.*w
+    wTimeDeriv += fft(((w.*AuxMat4).*AuxMat2).*ifft(w.*AuxMat1) - ifft(w.*AuxMat2).*ifft((w.*AuxMat4).*AuxMat1))
+end
+
 
 # Initial condition for the modal coefficients for the Taylor-Green vortex. Not zero-padded.
-function TaylorGreenInitial(N::Int)
+function TaylorGreenInitialModes(N::Int,t::Float64)
     xs = ys = ComputeNodes(N,0,2*pi)
-    InitialCondition = 1/(N*N) * (fft([TaylorGreen(0.0,x,y) for x=xs,y=ys]))
+    InitialCondition = 1/(N*N) * (fft([TaylorGreen(t,x,y) for x=xs,y=ys]))
 
     return InitialCondition
 end
@@ -120,12 +170,12 @@ end
 
 # Again assumes that we want norm of a square array of values. t indicates the time
 # that we are taking our true function.
-function ComputeL2Error(f::Function,t::Float64,g::Function,N::Int)
+function ComputeL2Error(f::Function,t::Float64,w::AbstractArray{ComplexF64,2},N::Int)
     s=0
 
     for i in 1:N
         for j in 1:N
-            s += (f(t,2*pi*i/N,2*pi*j/N) - g(2*pi*i/N,2*pi*j/N))^2
+            s += (f(t,2*pi*i/N,2*pi*j/N) - FourierInterpolantFromModes2D(w,2*pi*i/N,2*pi*j/N))^2
         end
     end
     
@@ -135,12 +185,12 @@ function ComputeL2Error(f::Function,t::Float64,g::Function,N::Int)
 end
 
 # Assumes again that matrices are square.
-function ComputeLinfError(f::Function,t::Float64,g::Function,N::Int)
+function ComputeLinfError(f::Function,t::Float64,w::AbstractArray{ComplexF64,2},N::Int)
 
     Mat = AbstractArray{Float64,2}(fill(0,N,N))
     for i in 1:N
         for j in 1:N
-            Mat[i,j] = abs( f(t,2*pi*i/N,2*pi*j/N) - g(2*pi*i/N,2*pi*j/N) )
+            Mat[i,j] = abs( f(t,2*pi*i/N,2*pi*j/N) - FourierInterpolantFromModes2D(w,2*pi*i/N,2*pi*j/N) )
         end
     end
 
@@ -150,51 +200,43 @@ end
 
 
 ### TESTING ENVIRONMENT ###
-#heatmap(A/(maximum(A)),clims=(-1,1))
+
 
 xs = ys = range(0,2*pi,length=128)
 A = [TaylorGreen(0.0,xs[i],ys[j]) for i in eachindex(xs),j in eachindex(ys)]
-heatmap(xs,ys,A,c=cgrad([:blue,:white,:red]))
 
-
-wInitial = TaylorGreenInitial(128)
-w0pad = ZeroPad(fftshift(wInitial))
-maximum(real(wInitial))
-maximum(imag(wInitial))
-
-AuxMat1,AuxMat2,AuxMat3,AuxMat4 = AuxMatrices(Int(3*128/2))
-
-test = AuxMat3.*w0pad
-
-maximum(real(test))
-
-
-test2 = 4/(9*128*128)*fftshift(fft(ifft((w0pad.*AuxMat4).*AuxMat1).*ifft(w0pad.*AuxMat2) - ifft(w0pad.*AuxMat1).*ifft((w0pad.*AuxMat4).*AuxMat2)))
-
-maximum(real(test2))
-maximum(imag(test2))
-
-
-
-fInitial(x,y) = FourierInterpolantFromModes2D(fftshift(wInitial),x,y)
+heatmap(xs,ys,A,c=:vik,clims=(-10,10))
 
 B = [fInitial(xs[i],ys[j]) for i in eachindex(xs),j in eachindex(ys)]
 heatmap(xs,ys,B-A,c=cgrad([:blue,:white,:red]))
 
 
-
-test = TurbulenceEquationTimeDerivative(wInitial,t1,t2,t3,t4,128)
-maximum(imag(test))
-maximum(real(test))
+minimum(real(TurbulenceEquationTimeDerivativeNoPad(t,a1,a2,a3,a4)))
 
 
-test2 = t3.*ZeroPad(wInitial)
-maximum(real(test2))
-
-maximum(real(wInitial))
 
 
-w = TaylorGreenInitial(128)
-out = TurbulenceEquationDriver(w,128)
+t = TaylorGreenInitialModes(32,0.0)
+
+ComputeL2Error(TaylorGreen,0.0,t,16)
+ComputeLinfError(TaylorGreen,0.0,t,16)
+
+maximum(real(t))
+minimum(real(t))
+
+
+a1,a2,a3,a4 = AuxMatrices(32)
+
+view(fftshift(a3.*t),13,:)
+
+view(a3,5,:)
+view(t,13,:)
+
+view(fftshift(t),5,:)
+
+
+view(t.*a3,5,:)
+view(t.*a3,13,:)
+
 
 
