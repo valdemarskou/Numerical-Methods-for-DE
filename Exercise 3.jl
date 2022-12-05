@@ -121,41 +121,40 @@ end
 
 
 
-# Removes padding. AuxMat1, AuxMat2, AuxMat4 are assumed to be zero-padded.
+# Removes padding. Everything is assumed zero-padded.
 function TurbulenceEquationTimeDerivative(w::AbstractArray{ComplexF64,2},AuxMat1::AbstractArray{ComplexF64,2},AuxMat2::AbstractArray{ComplexF64,2},AuxMat3::AbstractArray{Float64,2},AuxMat4::AbstractArray{Float64,2},N::Int)
 
     wTimeDerivative = AuxMat3.*w
-    w = ZeroPad(w)
-    w = 4/(9*N*N)* fft(((w.*AuxMat4).*AuxMat2).*ifft(w.*AuxMat1) - ifft(w.*AuxMat2).*ifft((w.*AuxMat4).*AuxMat1))
+    w = fft(((w.*AuxMat4).*AuxMat2).*ifft(w.*AuxMat1) - ifft(w.*AuxMat2).*ifft((w.*AuxMat4).*AuxMat1))
     
     # Removes zero-padding, adds convolution terms.
-    wTimeDerivative += RemovePad(w)
+    wTimeDerivative += w
 
     return wTimeDerivative   
 end
 
 
 #  Stuck on evaluating...
-function TurbulenceEquationDriver(wInitial::AbstractArray{ComplexF64,2})
+function TurbulenceEquationDriver(wInitial::AbstractArray{ComplexF64,2},t::Float64)
 
     N,N = size(wInitial)
 
     AuxMat1,AuxMat2,AuxMat3,AuxMat4 = AuxMatrices(N)
-    AuxMat1 = ZeroPad(AuxMat1)
-    AuxMat2 = ZeroPad(AuxMat2)
-    AuxMat4 = ZeroPad(AuxMat4)
+    #AuxMat1 = ZeroPad(AuxMat1)
+    #AuxMat2 = ZeroPad(AuxMat2)
+    #AuxMat4 = ZeroPad(AuxMat4)
 
-    g(u,p,t) = TurbulenceEquationTimeDerivative(u,AuxMat1,AuxMat2,AuxMat3,AuxMat4,N)
-    tspan = (0.0,0.1)
+    g(u,p,t) = TurbulenceEquationTimeDerivativeNoPad(u,AuxMat1,AuxMat2,AuxMat3,AuxMat4)
+    tspan = (0.0,t)
     prob = ODEProblem(g,wInitial,tspan)
-    sol = solve(prob)
+    sol = solve(prob,Tsit5())
 
     return sol
 end
 
 function TurbulenceEquationTimeDerivativeNoPad(w::AbstractArray{ComplexF64,2},AuxMat1::AbstractArray{ComplexF64,2},AuxMat2::AbstractArray{ComplexF64,2},AuxMat3::AbstractArray{Float64,2},AuxMat4::AbstractArray{Float64,2})
     wTimeDeriv = AuxMat3.*w
-    wTimeDeriv += fft(((w.*AuxMat4).*AuxMat2).*ifft(w.*AuxMat1) - ifft(w.*AuxMat2).*ifft((w.*AuxMat4).*AuxMat1))
+    wTimeDeriv += fft(((w.*AuxMat4).*AuxMat1).*ifft(w.*AuxMat2) - ifft(w.*AuxMat1).*ifft((w.*AuxMat4).*AuxMat2))
 end
 
 
@@ -198,45 +197,98 @@ function ComputeLinfError(f::Function,t::Float64,w::AbstractArray{ComplexF64,2},
 end
 
 
+# Assumes input matrix square for simplicity
+function StreamCoefficients(w::AbstractArray{ComplexF64,2})
+    w = fftshift(w)
+    
+    ψ = AbstractArray{ComplexF64,2}(fill(0,size(w)))
+
+    for m in 1:size(w,1)
+        for n in 1:size(w,2)
+            
+        end
+        
+    end
+end
+
+
+function KineticEnergy()
+    
+end
+
+
 
 ### TESTING ENVIRONMENT ###
 
 
+
+
+
+
+ @tim
+
+t = TaylorGreenInitialModes(128,0.0)
+a1,a2,a3,a4 = AuxMatrices(128)
+
+
+
+ComputationTimes = Array{Float64,1}(fill(0,33))
+L2Errors = Array{Float64,1}(fill(0,33))
+LinfErrors = Array{Float64,1}(fill(0,33))
+for k in 32:64
+    t = TaylorGreenInitialModes(2*k,0.0)
+    sol = @timed TurbulenceEquationDriver(t,0.1)
+
+    ComputationTimes[k-32+1] = sol[2]
+    L2Errors[k-32+1] = ComputeL2Error(TaylorGreen,0.1,fftshift(last(sol[1])),2*k)
+    LinfErrors[k-32+1] = ComputeLinfError(TaylorGreen,0.1,fftshift(last(sol[1])),2*k)
+end
+
+ComputationTimes
+L2Errors
+LinfErrors
+evens = AbstractArray{Float64,1}(fill(0,33))
+for k in 0:32
+    evens[k+1] = 64+2*k
+end
+
+p1 = plot(evens,ComputationTimes,linestyle=:dash,title="Computation Time",xlabel="N",ylabel = "time (s)",label="Computation Time",color =:red)
+p2 = scatter(evens,L2Errors,marker = :cross,color=:darkblue,yaxis = :log, label = "L2-Error",xlabel = "N",title = "L2 and L∞ Errors",ylabel = "Error")
+scatter!(evens,LinfErrors,marker = :cross, color=:turquoise,yaxis =:log,label = "L∞-Error",xlabel = "N")
+fig = plot(p1,p2,layout=(1,2))
+savefig(fig,"ComputationTimeAndErrors.png")
+
+
+sol = @timed TurbulenceEquationDriver(t,0.1)
+
+@timed
+sol[1].t
+
+
+sol[2]
+xs = ys = range(0,2*pi,length=256)
+A = [FourierInterpolantFromModes2D(fftshift(first(sol)),xs[i],ys[j]) for i in eachindex(xs),j in eachindex(ys)]
+heatmap(xs,ys,A,c=:vik,clims=(-8,8))
+
+
+ComputeL2Error(TaylorGreen,0.1,fftshift(sol[1001]),128)
+ComputeLinfError(TaylorGreen,0.1,fftshift(sol[1001]),128)
+
+sol[101]
+
+
+out = TurbulenceEquationDriver(t)
+
+ComputeL2Error(TaylorGreen,0.1,out[11],16)
+ComputeLinfError(TaylorGreen,0.1,out[11],16)
+
 xs = ys = range(0,2*pi,length=128)
-A = [TaylorGreen(0.0,xs[i],ys[j]) for i in eachindex(xs),j in eachindex(ys)]
 
-heatmap(xs,ys,A,c=:vik,clims=(-10,10))
+test(x,y)=FourierInterpolantFromModes2D(fftshift(sol[1001]),x,y)
+B = [test(xs[i],ys[j]) for i in eachindex(xs),j in eachindex(ys)]
+heatmap(xs,ys,B,c=:vik)
+A = [TaylorGreen(0.1,xs[i],ys[j]) for i in eachindex(xs),j in eachindex(ys)]
+heatmap(xs,ys,A,c=:vik)
+heatmap(xs,ys,A-B,c=:vik)
 
-B = [fInitial(xs[i],ys[j]) for i in eachindex(xs),j in eachindex(ys)]
-heatmap(xs,ys,B-A,c=cgrad([:blue,:white,:red]))
-
-
-minimum(real(TurbulenceEquationTimeDerivativeNoPad(t,a1,a2,a3,a4)))
-
-
-
-
-t = TaylorGreenInitialModes(32,0.0)
-
-ComputeL2Error(TaylorGreen,0.0,t,16)
-ComputeLinfError(TaylorGreen,0.0,t,16)
-
-maximum(real(t))
-minimum(real(t))
-
-
-a1,a2,a3,a4 = AuxMatrices(32)
-
-view(fftshift(a3.*t),13,:)
-
-view(a3,5,:)
-view(t,13,:)
-
-view(fftshift(t),5,:)
-
-
-view(t.*a3,5,:)
-view(t.*a3,13,:)
-
-
-
+contour(xs,ys,A,fill=true,c=:vik)
