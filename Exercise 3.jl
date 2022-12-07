@@ -1,13 +1,12 @@
 using LinearAlgebra
 using SparseArrays
 using Plots
-using FastGaussQuadrature
 using FFTW
 using DifferentialEquations
 include("DiscreteFourierCoefficients.jl")
 include("OtherDFTAlgorithms.jl")
 include("DiscreteFourierTransform.jl")
-include("LegendreAndChebyshev.jl")
+
 
 
 
@@ -121,21 +120,35 @@ end
 
 
 
-# Removes padding. Everything is assumed zero-padded.
+# Everything is assumed zero-padded.
 function TurbulenceEquationTimeDerivative(w::AbstractArray{ComplexF64,2},AuxMat1::AbstractArray{ComplexF64,2},AuxMat2::AbstractArray{ComplexF64,2},AuxMat3::AbstractArray{Float64,2},AuxMat4::AbstractArray{Float64,2},N::Int)
+    wTimeDeriv =(1/Re) * AuxMat3.*w
+    wTimeDeriv += fft(((w.*AuxMat4).*AuxMat1).*ifft(w.*AuxMat2) - ifft(w.*AuxMat1).*ifft((w.*AuxMat4).*AuxMat2))
 
-    wTimeDerivative = AuxMat3.*w
-    w = fft(((w.*AuxMat4).*AuxMat2).*ifft(w.*AuxMat1) - ifft(w.*AuxMat2).*ifft((w.*AuxMat4).*AuxMat1))
-    
-    # Removes zero-padding, adds convolution terms.
-    wTimeDerivative += w
+    return wTimeDeriv  
+end
 
-    return wTimeDerivative   
+function TurbulenceEquationDriver(wInitial::AbstractArray{ComplexF64,2},t::Float64,Re::Int)
+    N,N = size(wInitial)
+
+    AuxMat1,AuxMat2,AuxMat3,AuxMat4 = AuxMatrices(N)
+    wInitial = ZeroPad(wInitial)
+    AuxMat1 = ZeroPad(AuxMat1)
+    AuxMat2 = ZeroPad(AuxMat2)
+    AuxMat3 = ZeroPad(AuxMat3)
+    AuxMat4 = ZeroPad(AuxMat4)
+
+    g(u,p,t) = TurbulenceEquationTimeDerivativeNoPad(u,AuxMat1,AuxMat2,AuxMat3,AuxMat4,Re)
+    tspan = (0.0,t)
+    prob = ODEProblem(g,wInitial,tspan,Re)
+    sol = solve(prob,Tsit5())
+
+    return sol
 end
 
 
-#  Stuck on evaluating...
-function TurbulenceEquationDriverNoPad(wInitial::AbstractArray{ComplexF64,2},t::Float64,Re::Float64)
+# Does not zero-pad.
+function TurbulenceEquationDriverNoPad(wInitial::AbstractArray{ComplexF64,2},t::Float64,Re::Int)
 
     N,N = size(wInitial)
 
@@ -144,17 +157,19 @@ function TurbulenceEquationDriverNoPad(wInitial::AbstractArray{ComplexF64,2},t::
     #AuxMat2 = ZeroPad(AuxMat2)
     #AuxMat4 = ZeroPad(AuxMat4)
 
-    g(u,p,t) = TurbulenceEquationTimeDerivativeNoPad(u,AuxMat1,AuxMat2,AuxMat3,AuxMat4)
+    g(u,p,t) = TurbulenceEquationTimeDerivativeNoPad(u,AuxMat1,AuxMat2,AuxMat3,AuxMat4,Re)
     tspan = (0.0,t)
-    prob = ODEProblem(g,wInitial,tspan)
+    prob = ODEProblem(g,wInitial,tspan,Re)
     sol = solve(prob,Tsit5())
 
     return sol
 end
 
-function TurbulenceEquationTimeDerivativeNoPad(w::AbstractArray{ComplexF64,2},AuxMat1::AbstractArray{ComplexF64,2},AuxMat2::AbstractArray{ComplexF64,2},AuxMat3::AbstractArray{Float64,2},AuxMat4::AbstractArray{Float64,2})
+function TurbulenceEquationTimeDerivativeNoPad(w::AbstractArray{ComplexF64,2},AuxMat1::AbstractArray{ComplexF64,2},AuxMat2::AbstractArray{ComplexF64,2},AuxMat3::AbstractArray{Float64,2},AuxMat4::AbstractArray{Float64,2},Re::Int)
     wTimeDeriv =(1/Re) * AuxMat3.*w
     wTimeDeriv += fft(((w.*AuxMat4).*AuxMat1).*ifft(w.*AuxMat2) - ifft(w.*AuxMat1).*ifft((w.*AuxMat4).*AuxMat2))
+
+    return wTimeDeriv
 end
 
 
@@ -169,12 +184,12 @@ end
 
 # Again assumes that we want norm of a square array of values. t indicates the time
 # that we are taking our true function.
-function ComputeL2Error(f::Function,t::Float64,w::AbstractArray{ComplexF64,2},N::Int)
+function ErrorL2(f::Function,t::Float64,w::AbstractArray{ComplexF64,2},N::Int)
     s=0
 
     for i in 1:N
         for j in 1:N
-            s += (f(t,2*pi*i/N,2*pi*j/N) - FourierInterpolantFromModes2D(w,2*pi*i/N,2*pi*j/N))^2
+            s += (f(t,2*pi*i/N,2*pi*j/N,1) - FourierInterpolantFromModes2D(w,2*pi*i/N,2*pi*j/N))^2
         end
     end
     
@@ -184,8 +199,8 @@ function ComputeL2Error(f::Function,t::Float64,w::AbstractArray{ComplexF64,2},N:
 end
 
 # Assumes again that matrices are square.
-function ComputeLinfError(f::Function,t::Float64,w::AbstractArray{ComplexF64,2},N::Int)
-
+function ErrorLinf(f::Function,t::Float64,w::AbstractArray{ComplexF64,2},N::Int)
+    w = fftshift(w)
     Mat = AbstractArray{Float64,2}(fill(0,N,N))
     for i in 1:N
         for j in 1:N
@@ -197,6 +212,15 @@ function ComputeLinfError(f::Function,t::Float64,w::AbstractArray{ComplexF64,2},
 end
 
 
+function LinfNormOfInterPolant(w::AbstractArray{ComplexF64,2})
+    w = fftshift(w)
+
+    xs = ys = range(0,2*pi,length=size(w,1))
+    Mat = [abs(FourierInterpolantFromModes2D(w,x,y)) for x=xs, y = ys]
+
+    return maximum(Mat)
+end
+
 # Computes the modal coefficients for ψ, based on the computed coefficients for w.
 function StreamCoefficients(w::AbstractArray{ComplexF64,2})
     a4 = AuxMatrices(size(w,1))[4]
@@ -206,8 +230,22 @@ end
 
 
 
+# Computes the modal coefficients for w, based on the randomly generated coefficients for ψ.
+function FluidCoefficients(ψ::AbstractArray{ComplexF64,2})
+    a3 = AuxMatrices(size(w,1))[3]
+    return -(a3.*ψ)
+end
+
+function RandomFluid(N::Int)
+    ψ = randn(Complex{Float64}, N,N)
+    ψ = ψ * 1/(sqrt(2*TotalEnergy(ψ)))
+
+    return ψ
+end
+
+
 #Take input in the nyquist form. Assumes N_x = N_y.
-function KineticEnergy(w::AbstractArray{ComplexF64,2},k::Int)
+function EnergySpectrum(w::AbstractArray{ComplexF64,2},k::Int)
     ψ = fftshift(StreamCoefficients(w))
     Nx,Ny = size(ψ)
     NxDiv2 = Int(Nx/2)
@@ -222,46 +260,93 @@ function KineticEnergy(w::AbstractArray{ComplexF64,2},k::Int)
             end    
         end
     end
-
-    t = t*k*k/2
     
     return t
 end
 
+
+function TotalEnergy(w::AbstractArray{ComplexF64,2})
+    return sum(real(w).*real(w)) + sum(imag(w).*imag(w))
+end
+
+
 function DipoleInitialCondition(N::Int)
     d = pi
     xs = ys = ComputeNodes(N,0,2*pi)
-    A = [-2*exp(-((x-d)^2 + (y-6/5 *d)^2)/(0.2*d)) for x = xs, y = ys] 
-    B = [2*exp(-((x-d)^2 + (y-4/5 *d)^2)/(0.2*d)) for x = xs, y = ys]
+    A = [-5*exp(-((x-d)^2 + (y-21/20 *d)^2)/(0.2*d)) for x = xs, y = ys] 
+    B = [5*exp(-((x-d)^2 + (y-19/20 *d)^2)/(0.2*d)) for x = xs, y = ys]
     
     return 1/(N*N) * fft(A+B)
+    #return A+B
+end
+
+
+# For plotting purposes.
+function HeatMapOfInterpolant(w::AbstractArray{ComplexF64,2},r)
+    w = fftshift(w)
+    xs = ys = range(0,2*pi,length = size(w,1))
+    Mat = [FourierInterpolantFromModes2D(w,x,y) for x = xs, y = ys]
+    heatmap(xs,ys,Mat,c=:vik,clims=(-r,r))
+end
+
+function HeatMapOfInterpolant(w::AbstractArray{ComplexF64,2})
+    w = fftshift(w)
+    e = LinfNormOfInterPolant(w)
+    xs = ys = range(0,2*pi,length = size(w,1))
+    Mat = [FourierInterpolantFromModes2D(w,x,y) for x = xs, y = ys]
+
+    Mat = Mat * 1/(maximum(abs.(Mat)))
+    heatmap(xs,ys,Mat,c=:vik)
 end
 
 
 ### TESTING ENVIRONMENT ###
 
+# To run the simulations, you first need to generate an initial field. 
+# There is TaylorGreenInitialModes(N,0.0), which takes integer input and returns
+# an NxN matrix of modal coefficients for the classical Taylor Green Vortex.
+# There is also DipoleInitialCondition(N), which is just a different and fun 
+# possible initial field. Finally, to generate a random field we use
+# RandomFluid(N) which again creates a NxN Matrix.
+# After this, use TurbulenceEquationDriver or TurbulenceEquationDriverNoPad, 
+# which takes as input the initial field, the stopping time t, 
+# and the reynolds Number of the flow. Then the result can be plotted using
+# HeatMapOfInterpolant, which takes as input a set of moedal coefficients at 
+# a desired timestep.
+
+#Example: 
+
+InitialField = TaylorGreenInitialModes(64,0.0)
+solution = TurbulenceEquationDriverNoPad(InitialField, 0.1,1)
 
 
 
-w = TaylorGreenInitialModes(128,0.0)
-w = DipoleInitialCondition(128)
-ψ = StreamCoefficients(w)
-
-sum(E)
+# If using the zero-padded driver, always use the RemovePad() function on the 
+# final output. And remember to use fftshift to convert between normal and
+# nyquist frequencies in the modes.
 
 
 
-E = [KineticEnergy(w,n)+1.0e-39 for n in 1:95]
+# Plots for a simulation of a random initial fluid at some different timesteps.
+#=
+w = RandomFluid(128)
+sol = TurbulenceEquationDriver(w,20.0,1000)
+
+p1 = HeatMapOfInterpolant(RemovePad(sol[1]))
+p1 = plot(p1, xlabel = "t = 0.0")
+p2 = HeatMapOfInterpolant(RemovePad(sol[20]))
+p2 = plot(p2,xlabel = "t = 5.9")
+p3 = HeatMapOfInterpolant(RemovePad(sol[40]))
+p3 = plot(p3, xlabel = "t = 14.4")
+p4 = HeatMapOfInterpolant(RemovePad(sol[54]))
+p4 = plot(p4, xlabel = "t = 20.0")
+out = plot(p1,p2,p3,p4,layout = (2,2))
+#savefig(out,"RandomFluid.png")
+=#
 
 
-plot(1:95,E,yaxis=:log,xaxis=:log,color=:red)
-plot!(1:95, [0.0000000000000000000000000001/(k^3) for k=1:95],linestyle=:dash,color=:black,label="1/k³")
 
-
-a1,a2,a3,a4 = AuxMatrices(128)
-
-AuxMatrices(64)[4]
-
+# Plot that measures the computation time. Will take a few minutes to run.
 #=
 ComputationTimes = Array{Float64,1}(fill(0,33))
 L2Errors = Array{Float64,1}(fill(0,33))
@@ -290,34 +375,20 @@ savefig(fig,"ComputationTimeAndErrors.png")
 
 
 
-@timed
-sol[1].t
+# Some other plot.
+#=
+w = TaylorGreenInitialModes(128,0.0)
+sol = TurbulenceEquationDriver(w,0.1,1)
+
+E1=[EnergySpectrum(sol[1],k) for k in 1:135]
+E2 = [EnergySpectrum(last(sol),k) for k in 1:135]
+asym = [(1e-25)/(k^3) for k in 1:135]
 
 
-sol[2]
-xs = ys = range(0,2*pi,length=256)
-A = [FourierInterpolantFromModes2D(fftshift(first(sol)),xs[i],ys[j]) for i in eachindex(xs),j in eachindex(ys)]
-heatmap(xs,ys,A,c=:vik,clims=(-8,8))
 
+p1 = scatter(1:100,E1,yaxis=:log,xaxis=:log,label ="t = 0",marker=:cross,color=:darkred,title="Energy Spectrum For Different time")
+scatter!(1:100,E2,label ="t = 0.1",marker=:cross,color=:pink)
 
-ComputeL2Error(TaylorGreen,0.1,fftshift(sol[1001]),128)
-ComputeLinfError(TaylorGreen,0.1,fftshift(sol[1001]),128)
-
-sol[101]
-
-
-out = TurbulenceEquationDriver(t)
-
-ComputeL2Error(TaylorGreen,0.1,out[11],16)
-ComputeLinfError(TaylorGreen,0.1,out[11],16)
-
-xs = ys = range(0,2*pi,length=128)
-
-test(x,y)=FourierInterpolantFromModes2D(fftshift(sol[1001]),x,y)
-B = [test(xs[i],ys[j]) for i in eachindex(xs),j in eachindex(ys)]
-heatmap(xs,ys,B,c=:vik)
-A = [TaylorGreen(0.1,xs[i],ys[j]) for i in eachindex(xs),j in eachindex(ys)]
-heatmap(xs,ys,A,c=:vik)
-heatmap(xs,ys,A-B,c=:vik)
-
-contour(xs,ys,A,fill=true,c=:vik)
+plot!(asym,linestyle=:dash,color=:black,label="1/k³")
+#savefig(p1, "spectrumplot.png")
+=#
