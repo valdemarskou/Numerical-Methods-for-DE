@@ -11,9 +11,9 @@ include("LegendreAndChebyshev.jl")
 
 
 
-k = 4.0
-Re = 1.0
-function TaylorGreen(t,x,y)
+
+function TaylorGreen(t,x,y,Re)
+    k = 4.0
     return 2*k*cos(k*x)*cos(k*y)*exp(-2*k*k*t/Re)
 end
 
@@ -135,7 +135,7 @@ end
 
 
 #  Stuck on evaluating...
-function TurbulenceEquationDriver(wInitial::AbstractArray{ComplexF64,2},t::Float64)
+function TurbulenceEquationDriverNoPad(wInitial::AbstractArray{ComplexF64,2},t::Float64,Re::Float64)
 
     N,N = size(wInitial)
 
@@ -153,7 +153,7 @@ function TurbulenceEquationDriver(wInitial::AbstractArray{ComplexF64,2},t::Float
 end
 
 function TurbulenceEquationTimeDerivativeNoPad(w::AbstractArray{ComplexF64,2},AuxMat1::AbstractArray{ComplexF64,2},AuxMat2::AbstractArray{ComplexF64,2},AuxMat3::AbstractArray{Float64,2},AuxMat4::AbstractArray{Float64,2})
-    wTimeDeriv = AuxMat3.*w
+    wTimeDeriv =(1/Re) * AuxMat3.*w
     wTimeDeriv += fft(((w.*AuxMat4).*AuxMat1).*ifft(w.*AuxMat2) - ifft(w.*AuxMat1).*ifft((w.*AuxMat4).*AuxMat2))
 end
 
@@ -161,7 +161,7 @@ end
 # Initial condition for the modal coefficients for the Taylor-Green vortex. Not zero-padded.
 function TaylorGreenInitialModes(N::Int,t::Float64)
     xs = ys = ComputeNodes(N,0,2*pi)
-    InitialCondition = 1/(N*N) * (fft([TaylorGreen(t,x,y) for x=xs,y=ys]))
+    InitialCondition = 1/(N*N) * (fft([TaylorGreen(t,x,y,1.0) for x=xs,y=ys]))
 
     return InitialCondition
 end
@@ -197,25 +197,45 @@ function ComputeLinfError(f::Function,t::Float64,w::AbstractArray{ComplexF64,2},
 end
 
 
-# Assumes input matrix square for simplicity
+# Computes the modal coefficients for ψ, based on the computed coefficients for w.
 function StreamCoefficients(w::AbstractArray{ComplexF64,2})
-    w = fftshift(w)
-    
-    ψ = AbstractArray{ComplexF64,2}(fill(0,size(w)))
+    a4 = AuxMatrices(size(w,1))[4]
 
-    for m in 1:size(w,1)
-        for n in 1:size(w,2)
-            
+    return (a4.*w)
+end
+
+
+
+#Take input in the nyquist form. Assumes N_x = N_y.
+function KineticEnergy(w::AbstractArray{ComplexF64,2},k::Int)
+    ψ = fftshift(StreamCoefficients(w))
+    Nx,Ny = size(ψ)
+    NxDiv2 = Int(Nx/2)
+    NyDiv2 = Int(Ny/2)
+
+    t = 0
+
+    for m in (-NxDiv2):(NxDiv2-1)
+        for n in (-NyDiv2):(NyDiv2-1)
+            if(k*k < m*m+n*n && m*m+n*n < (k+1)*(k+1))
+                t += real(ψ[m+NxDiv2+1,n+NxDiv2+1])^2 + imag(ψ[m+NxDiv2+1,n+NxDiv2+1])^2
+            end    
         end
-        
     end
-end
 
-
-function KineticEnergy()
+    t = t*k*k/2
     
+    return t
 end
 
+function DipoleInitialCondition(N::Int)
+    d = pi
+    xs = ys = ComputeNodes(N,0,2*pi)
+    A = [-2*exp(-((x-d)^2 + (y-6/5 *d)^2)/(0.2*d)) for x = xs, y = ys] 
+    B = [2*exp(-((x-d)^2 + (y-4/5 *d)^2)/(0.2*d)) for x = xs, y = ys]
+    
+    return 1/(N*N) * fft(A+B)
+end
 
 
 ### TESTING ENVIRONMENT ###
@@ -223,15 +243,26 @@ end
 
 
 
+w = TaylorGreenInitialModes(128,0.0)
+w = DipoleInitialCondition(128)
+ψ = StreamCoefficients(w)
+
+sum(E)
 
 
- @tim
 
-t = TaylorGreenInitialModes(128,0.0)
+E = [KineticEnergy(w,n)+1.0e-39 for n in 1:95]
+
+
+plot(1:95,E,yaxis=:log,xaxis=:log,color=:red)
+plot!(1:95, [0.0000000000000000000000000001/(k^3) for k=1:95],linestyle=:dash,color=:black,label="1/k³")
+
+
 a1,a2,a3,a4 = AuxMatrices(128)
 
+AuxMatrices(64)[4]
 
-
+#=
 ComputationTimes = Array{Float64,1}(fill(0,33))
 L2Errors = Array{Float64,1}(fill(0,33))
 LinfErrors = Array{Float64,1}(fill(0,33))
@@ -243,10 +274,8 @@ for k in 32:64
     L2Errors[k-32+1] = ComputeL2Error(TaylorGreen,0.1,fftshift(last(sol[1])),2*k)
     LinfErrors[k-32+1] = ComputeLinfError(TaylorGreen,0.1,fftshift(last(sol[1])),2*k)
 end
-
-ComputationTimes
-L2Errors
-LinfErrors
+=#
+#=
 evens = AbstractArray{Float64,1}(fill(0,33))
 for k in 0:32
     evens[k+1] = 64+2*k
@@ -257,9 +286,9 @@ p2 = scatter(evens,L2Errors,marker = :cross,color=:darkblue,yaxis = :log, label 
 scatter!(evens,LinfErrors,marker = :cross, color=:turquoise,yaxis =:log,label = "L∞-Error",xlabel = "N")
 fig = plot(p1,p2,layout=(1,2))
 savefig(fig,"ComputationTimeAndErrors.png")
+=#
 
 
-sol = @timed TurbulenceEquationDriver(t,0.1)
 
 @timed
 sol[1].t
