@@ -13,7 +13,7 @@ include("LegendreAndChebyshev.jl")
 # Problem c)
 
 L = 50
-T = 1
+T = 10
 c = 1
 x0 = 0
 
@@ -67,8 +67,8 @@ ComputeValues(16,uInitial2,0,2*pi)
 
 function KDVEquationCollocationTimeDerivative(u::AbstractArray{Float64,1},D::AbstractArray{Float64,2})
 
-    #N = length(u)
-    #D = FourierDerivativeMatrix(N)
+    N = length(u)
+    D = FourierDerivativeMatrix(N)
 
     return (-6*T*(pi/L)*(u .*(D*u)) - T*((pi/(L))^(3))*D*D*D*u)
 
@@ -209,12 +209,3 @@ out=plot(evens,ComputationTime,linestyle=:dash,title="Computation Time",xlabel="
 
 M = 64
 
-output = KDVEquationGalerkinDriver(M,1,0)
-
-
-
-p1 = plot(ComputeNodes(512),uExact2.(ComputeNodes(512),0))
-interpt0(x) = FourierInterpolantFromModes(x,output[1])
-scatter!(ComputeNodes(512),interpt0.(ComputeNodes(512)))
-
-out = plot(xs,interpt0.(xs))
